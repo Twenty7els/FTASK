@@ -39,14 +39,13 @@ function AppContent() {
   
   const { telegramUser, isTelegram, isReady } = useTelegram();
   const [initialized, setInitialized] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showLoginForm, setShowLoginForm] = useState(false);
   const [telegramIdInput, setTelegramIdInput] = useState('');
 
   // Load data from database
   const loadDataFromDB = useCallback(async (userId: string) => {
     try {
-      setIsLoading(true);
-      
       // Load families
       const familiesRes = await fetch(`/api/family?userId=${userId}`);
       if (familiesRes.ok) {
@@ -84,12 +83,43 @@ function AppContent() {
         const data = await friendsRes.json();
         setFriends(data.friends || []);
       }
-    } catch (error) {
-      console.error('Error loading data from DB:', error);
+    } catch (err) {
+      console.error('Error loading data from DB:', err);
+    }
+  }, [setFamilies, setCurrentFamily, setTasks, setEvents, setWishlist, setFriends]);
+
+  // Login with Telegram ID
+  const handleLogin = async (telegramId: string) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telegramId: telegramId,
+          username: `user_${telegramId}`,
+          firstName: 'User',
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data.user);
+        setIsDemoMode(true);
+        await loadDataFromDB(data.user.id);
+      } else {
+        const errData = await response.json();
+        setError(errData.error || 'Ошибка авторизации');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('Ошибка соединения');
     } finally {
       setIsLoading(false);
     }
-  }, [setFamilies, setCurrentFamily, setTasks, setEvents, setWishlist, setFriends, setIsLoading]);
+  };
 
   // Initialize app
   useEffect(() => {
@@ -98,10 +128,9 @@ function AppContent() {
     const initApp = async () => {
       setIsLoading(true);
       
-      // Check if running in Telegram
-      if (isTelegram && telegramUser) {
+      // Check if running in Telegram with user data
+      if (isTelegram && telegramUser?.id) {
         try {
-          // Authenticate with Telegram
           const response = await fetch('/api/auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -119,10 +148,19 @@ function AppContent() {
             setUser(data.user);
             setIsDemoMode(false);
             await loadDataFromDB(data.user.id);
+          } else {
+            // Auth failed - show login form
+            setError('Не удалось авторизоваться');
           }
-        } catch (error) {
-          console.error('Auth error:', error);
+        } catch (err) {
+          console.error('Auth error:', err);
+          setError('Ошибка соединения с сервером');
         }
+      }
+      // If in Telegram but no user data - show login
+      else if (isTelegram && !telegramUser?.id) {
+        // In Telegram but no user data - need manual login
+        setError(null);
       }
       
       setIsLoading(false);
@@ -130,101 +168,63 @@ function AppContent() {
     };
     
     initApp();
-  }, [isReady, initialized, isTelegram, telegramUser, setIsLoading, setUser, setIsDemoMode, loadDataFromDB]);
-
-  // Login with Telegram ID (for testing)
-  const handleLoginWithId = async () => {
-    if (!telegramIdInput.trim()) return;
-    
-    setIsLoading(true);
-    try {
-      const response = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          telegramId: telegramIdInput.trim(),
-          username: `user_${telegramIdInput}`,
-          firstName: 'Test',
-          lastName: 'User',
-        }),
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setUser(data.user);
-        setIsDemoMode(true);
-        await loadDataFromDB(data.user.id);
-        setShowLoginForm(false);
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [isReady, initialized, isTelegram, telegramUser]);
 
   // Task handlers
   const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
     setTasks(tasks.map(t => t.id === taskId ? { ...t, ...updates } : t));
-    
     try {
       await fetch(`/api/tasks/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...updates, completedBy: user?.id }),
       });
-    } catch (error) {
-      console.error('Error updating task:', error);
+    } catch (err) {
+      console.error('Error updating task:', err);
     }
   };
 
   const handleDeleteTask = async (taskId: string) => {
     setTasks(tasks.filter(t => t.id !== taskId));
-    
     try {
       await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
-    } catch (error) {
-      console.error('Error deleting task:', error);
+    } catch (err) {
+      console.error('Error deleting task:', err);
     }
   };
 
-  // Event handlers
   const handleEventRespond = async (eventId: string, response: EventResponseStatus) => {
     setEvents(events.map(e => {
       if (e.id === eventId && e.participants) {
-        const updatedParticipants = e.participants.map(p => 
+        return { ...e, participants: e.participants.map(p => 
           p.userId === user?.id ? { ...p, response } : p
-        );
-        return { ...e, participants: updatedParticipants };
+        )};
       }
       return e;
     }));
-    
     try {
       await fetch(`/api/events/${eventId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user?.id, response }),
       });
-    } catch (error) {
-      console.error('Error responding to event:', error);
+    } catch (err) {
+      console.error('Error responding to event:', err);
     }
   };
 
-  // Wishlist handlers
   const handleBookItem = async (itemId: string) => {
     setWishlist(wishlist.map(item => 
       item.id === itemId ? { ...item, isBooked: true } : item
     ));
-    
     try {
       await fetch(`/api/wishlist/${itemId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user?.id, action: 'book' }),
       });
-    } catch (error) {
-      console.error('Error booking item:', error);
+    } catch (err) {
+      console.error('Error booking item:', err);
     }
   };
 
@@ -232,29 +232,28 @@ function AppContent() {
     setWishlist(wishlist.map(item => 
       item.id === itemId ? { ...item, isBooked: false } : item
     ));
-    
     try {
       await fetch(`/api/wishlist/${itemId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user?.id, action: 'unbook' }),
       });
-    } catch (error) {
-      console.error('Error unbooking item:', error);
+    } catch (err) {
+      console.error('Error unbooking item:', err);
     }
   };
 
   const handleDeleteWishlistItem = async (itemId: string) => {
     setWishlist(wishlist.filter(item => item.id !== itemId));
-    
     try {
       await fetch(`/api/wishlist/${itemId}`, { method: 'DELETE' });
-    } catch (error) {
-      console.error('Error deleting wishlist item:', error);
+    } catch (err) {
+      console.error('Error deleting wishlist item:', err);
     }
   };
 
-  if (!isReady || isLoading) {
+  // Loading screen
+  if (!isReady || (isLoading && !initialized)) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <motion.div
@@ -278,18 +277,24 @@ function AppContent() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Семейный Органайзер</h1>
-            <p className="text-gray-500">
-              {isTelegram 
-                ? 'Загрузка данных...' 
-                : 'Войдите для управления задачами семьи'}
-            </p>
+            <p className="text-gray-500">Войдите для продолжения</p>
           </div>
 
-          {isTelegram ? (
-            <div className="text-center text-sm text-gray-400">
-              Подождите...
+          {error && (
+            <div className="bg-red-50 text-red-600 p-3 rounded-xl mb-4 text-sm">
+              {error}
             </div>
-          ) : showLoginForm ? (
+          )}
+
+          {isTelegram && (
+            <div className="bg-blue-50 rounded-2xl p-3 mb-4">
+              <p className="text-sm text-blue-700">
+                📱 Запущено в Telegram
+              </p>
+            </div>
+          )}
+
+          {showLoginForm ? (
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -303,18 +308,19 @@ function AppContent() {
                   className="rounded-xl"
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  Ваш Telegram ID можно узнать у @userinfobot в Telegram
+                  Узнайте свой ID у @userinfobot в Telegram
                 </p>
               </div>
               <Button 
-                onClick={handleLoginWithId}
+                onClick={() => handleLogin(telegramIdInput)}
                 className="w-full rounded-xl h-12"
+                disabled={!telegramIdInput.trim()}
               >
                 Войти
               </Button>
               <Button 
                 variant="ghost"
-                onClick={() => setShowLoginForm(false)}
+                onClick={() => { setShowLoginForm(false); setError(null); }}
                 className="w-full rounded-xl"
               >
                 Назад
@@ -322,24 +328,16 @@ function AppContent() {
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="bg-blue-50 rounded-2xl p-4">
-                <h3 className="font-semibold text-blue-800 mb-2">📱 Через Telegram:</h3>
-                <ol className="text-sm text-blue-700 space-y-1">
-                  <li>1. Найдите бота в Telegram</li>
-                  <li>2. Откройте Mini App</li>
-                </ol>
-              </div>
+              <Button 
+                onClick={() => setShowLoginForm(true)}
+                className="w-full rounded-xl h-12"
+              >
+                Войти по Telegram ID
+              </Button>
               
-              <div className="bg-gray-50 rounded-2xl p-4">
-                <h3 className="font-semibold text-gray-800 mb-2">🧪 Для тестирования:</h3>
-                <Button 
-                  variant="outline"
-                  onClick={() => setShowLoginForm(true)}
-                  className="w-full rounded-xl"
-                >
-                  Войти по Telegram ID
-                </Button>
-              </div>
+              <p className="text-xs text-center text-gray-400">
+                Или откройте через Telegram Bot для автоматического входа
+              </p>
             </div>
           )}
         </Card>
@@ -347,6 +345,7 @@ function AppContent() {
     );
   }
 
+  // Main app
   return (
     <div className="min-h-screen bg-gray-50">
       <Header 
@@ -359,70 +358,26 @@ function AppContent() {
       <main className="max-w-lg mx-auto pt-4 pb-20">
         <AnimatePresence mode="wait">
           {activeTab === 'tasks' && (
-            <motion.div
-              key="tasks"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.2 }}
-            >
-              <TaskList
-                tasks={tasks}
-                onUpdateTask={handleUpdateTask}
-                onDeleteTask={handleDeleteTask}
-              />
+            <motion.div key="tasks" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+              <TaskList tasks={tasks} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} />
             </motion.div>
           )}
           
           {activeTab === 'events' && (
-            <motion.div
-              key="events"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.2 }}
-            >
-              <EventList
-                events={events}
-                currentUserId={user?.id}
-                onRespond={handleEventRespond}
-              />
+            <motion.div key="events" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+              <EventList events={events} currentUserId={user?.id} onRespond={handleEventRespond} />
             </motion.div>
           )}
           
           {activeTab === 'wishlist' && (
-            <motion.div
-              key="wishlist"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.2 }}
-            >
-              <WishlistList
-                items={wishlist}
-                isOwner={true}
-                currentUserId={user?.id}
-                onBook={handleBookItem}
-                onUnbook={handleUnbookItem}
-                onDelete={handleDeleteWishlistItem}
-              />
+            <motion.div key="wishlist" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+              <WishlistList items={wishlist} isOwner={true} currentUserId={user?.id} onBook={handleBookItem} onUnbook={handleUnbookItem} onDelete={handleDeleteWishlistItem} />
             </motion.div>
           )}
           
           {activeTab === 'profile' && (
-            <motion.div
-              key="profile"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.2 }}
-            >
-              <ProfileView
-                user={user}
-                families={families}
-                friendsCount={friends.length}
-                isOwner={true}
-              />
+            <motion.div key="profile" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+              <ProfileView user={user} families={families} friendsCount={friends.length} isOwner={true} />
             </motion.div>
           )}
         </AnimatePresence>
