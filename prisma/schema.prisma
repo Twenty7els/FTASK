@@ -1,0 +1,234 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Пользователи
+model User {
+  id          String   @id @default(uuid())
+  telegramId  String   @unique
+  username    String?
+  firstName   String
+  lastName    String?
+  avatarUrl   String?
+  birthday    String?
+  chatId      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  friendRequestsSent     FriendRequest[]  @relation("SentRequests")
+  friendRequestsReceived FriendRequest[]  @relation("ReceivedRequests")
+  friendshipsAsUser      Friendship[]     @relation("UserFriendships")
+  friendshipsAsFriend    Friendship[]     @relation("FriendFriendships")
+  familyMemberships      FamilyMember[]
+  createdFamilies        FamilyGroup[]    @relation("FamilyCreator")
+  tasksCreated           Task[]
+  tasksAssigned          TaskAssignment[]
+  eventsCreated          Event[]
+  eventParticipations    EventParticipant[]
+  eventInvitations       EventInvitation[]
+  wishlistItems          WishlistItem[]
+  wishlistBookings       WishlistBooking[]
+  notifications          Notification[]
+  completedTasks         Archive[]
+}
+
+// Запросы в друзья
+model FriendRequest {
+  id         String   @id @default(uuid())
+  senderId   String
+  receiverId String
+  status     String   @default("pending") // pending, accepted, declined
+  createdAt  DateTime @default(now())
+  
+  sender   User @relation("SentRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  @@unique([senderId, receiverId])
+}
+
+// Дружба
+model Friendship {
+  id        String   @id @default(uuid())
+  userId    String
+  friendId  String
+  createdAt DateTime @default(now())
+  
+  user   User @relation("UserFriendships", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendFriendships", fields: [friendId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, friendId])
+}
+
+// Семейные группы
+model FamilyGroup {
+  id          String   @id @default(uuid())
+  name        String
+  createdById String
+  createdAt   DateTime @default(now())
+  
+  createdBy User          @relation("FamilyCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members   FamilyMember[]
+  tasks     Task[]
+}
+
+// Члены семьи
+model FamilyMember {
+  id        String   @id @default(uuid())
+  familyId  String
+  userId    String
+  role      String   @default("member") // admin, member
+  joinedAt  DateTime @default(now())
+  
+  family FamilyGroup @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([familyId, userId])
+}
+
+// Категории задач
+model TaskCategory {
+  id        String @id @default(uuid())
+  name      String
+  icon      String
+  type      String // shopping, home, other
+  order     Int    @default(0)
+  tasks     Task[]
+}
+
+// Задачи
+model Task {
+  id          String   @id @default(uuid())
+  familyId    String
+  createdById String
+  type        String   @default("shopping") // shopping, home, other
+  categoryId  String?
+  title       String
+  description String?
+  quantity    Float?
+  unit        String?
+  status      String   @default("active") // active, completed, archived, deleted
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  family    FamilyGroup    @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  createdBy User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  category  TaskCategory?  @relation(fields: [categoryId], references: [id])
+  assignedTo TaskAssignment[]
+  archive   Archive?
+}
+
+// Назначение задач
+model TaskAssignment {
+  id     String @id @default(uuid())
+  taskId String
+  userId String
+  
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([taskId, userId])
+}
+
+// Архив задач
+model Archive {
+  id          String   @id @default(uuid())
+  taskId      String   @unique
+  completedBy String
+  completedAt DateTime
+  archivedAt  DateTime @default(now())
+  
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [completedBy], references: [id], onDelete: Cascade)
+}
+
+// Мероприятия
+model Event {
+  id          String   @id @default(uuid())
+  createdById String
+  title       String
+  description String?
+  location    String?
+  eventDate   DateTime
+  createdAt   DateTime @default(now())
+  
+  createdBy    User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  participants EventParticipant[]
+  invitations  EventInvitation[]
+}
+
+// Участники мероприятий
+model EventParticipant {
+  id        String   @id @default(uuid())
+  eventId   String
+  userId    String
+  response  String   @default("pending") // pending, going, not_going
+  updatedAt DateTime @updatedAt
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([eventId, userId])
+}
+
+// Приглашения на мероприятия
+model EventInvitation {
+  id      String @id @default(uuid())
+  eventId String
+  userId  String
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([eventId, userId])
+}
+
+// Вишлист
+model WishlistItem {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  link        String?
+  price       Float?
+  imageUrl    String?
+  isBooked    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings WishlistBooking[]
+}
+
+// Бронирования вишлиста
+model WishlistBooking {
+  id          String   @id @default(uuid())
+  itemId      String
+  userId      String
+  bookedAt    DateTime  @default(now())
+  cancelledAt DateTime?
+  
+  item WishlistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([itemId, userId])
+}
+
+// Уведомления
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  payload   String   // JSON
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
