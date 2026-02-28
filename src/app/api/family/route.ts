@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     const families = memberships.map(m => m.family)
 
-    return NextResponse.json({ families })
+    return NextResponse.json({ success: true, data: families })
   } catch (error) {
     console.error('Fetch family error:', error)
     return NextResponse.json(
