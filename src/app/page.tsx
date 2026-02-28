@@ -11,6 +11,9 @@ import { WishlistList } from '@/components/wishlist/WishlistList';
 import { ProfileView } from '@/components/profile/ProfileView';
 import { useAppStore } from '@/lib/store';
 import { Task, Event, WishlistItem, EventResponseStatus } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
 
 function AppContent() {
   const { 
@@ -36,215 +39,69 @@ function AppContent() {
   
   const { telegramUser, isTelegram, isReady } = useTelegram();
   const [initialized, setInitialized] = useState(false);
+  const [showLoginForm, setShowLoginForm] = useState(false);
+  const [telegramIdInput, setTelegramIdInput] = useState('');
 
-  // Load demo data function - defined with useCallback
-  const loadDemoData = useCallback(() => {
-    setIsDemoMode(true);
-    
-    // Create demo user if not in Telegram
-    if (!isTelegram) {
-      const demoUser = {
-        id: 'demo-user-id',
-        telegramId: '123456789',
-        username: 'demo_user',
-        firstName: 'Demo',
-        lastName: 'User',
-        avatarUrl: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setUser(demoUser);
+  // Load data from database
+  const loadDataFromDB = useCallback(async (userId: string) => {
+    try {
+      setIsLoading(true);
+      
+      // Load families
+      const familiesRes = await fetch(`/api/family?userId=${userId}`);
+      if (familiesRes.ok) {
+        const data = await familiesRes.json();
+        setFamilies(data.families || []);
+        if (data.families?.length > 0) {
+          setCurrentFamily(data.families[0]);
+          
+          // Load tasks for first family
+          const tasksRes = await fetch(`/api/tasks?familyId=${data.families[0].id}`);
+          if (tasksRes.ok) {
+            const tasksData = await tasksRes.json();
+            setTasks(tasksData.tasks || []);
+          }
+        }
+      }
+
+      // Load events
+      const eventsRes = await fetch(`/api/events?userId=${userId}`);
+      if (eventsRes.ok) {
+        const data = await eventsRes.json();
+        setEvents(data.events || []);
+      }
+
+      // Load wishlist
+      const wishlistRes = await fetch(`/api/wishlist?userId=${userId}`);
+      if (wishlistRes.ok) {
+        const data = await wishlistRes.json();
+        setWishlist(data.items || []);
+      }
+
+      // Load friends
+      const friendsRes = await fetch(`/api/friends?userId=${userId}`);
+      if (friendsRes.ok) {
+        const data = await friendsRes.json();
+        setFriends(data.friends || []);
+      }
+    } catch (error) {
+      console.error('Error loading data from DB:', error);
+    } finally {
+      setIsLoading(false);
     }
-    
-    // Demo family
-    const demoFamily = {
-      id: 'demo-family-1',
-      name: 'Семья Ивановых',
-      createdById: 'demo-user-id',
-      createdAt: new Date(),
-      members: [
-        { id: 'm1', familyId: 'demo-family-1', userId: 'demo-user-id', role: 'admin', joinedAt: new Date() },
-        { id: 'm2', familyId: 'demo-family-1', userId: 'demo-user-2', role: 'member', joinedAt: new Date() },
-      ],
-    };
-    
-    setFamilies([demoFamily]);
-    setCurrentFamily(demoFamily);
-    
-    // Demo tasks
-    const demoTasks: Task[] = [
-      {
-        id: 't1',
-        familyId: 'demo-family-1',
-        createdById: 'demo-user-id',
-        type: 'shopping',
-        categoryId: 'cat1',
-        title: 'Молоко 3.2%',
-        description: 'Свежее молоко для завтрака',
-        quantity: 2,
-        unit: 'л',
-        status: 'active',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        category: { id: 'cat1', name: 'Молочное', icon: 'Milk', type: 'shopping', order: 1 },
-        assignedTo: [],
-      },
-      {
-        id: 't2',
-        familyId: 'demo-family-1',
-        createdById: 'demo-user-id',
-        type: 'shopping',
-        categoryId: 'cat2',
-        title: 'Куриное филе',
-        quantity: 1,
-        unit: 'кг',
-        status: 'active',
-        createdAt: new Date(Date.now() - 3600000),
-        updatedAt: new Date(),
-        category: { id: 'cat2', name: 'Мясо/Рыба', icon: 'Beef', type: 'shopping', order: 2 },
-        assignedTo: [],
-      },
-      {
-        id: 't3',
-        familyId: 'demo-family-1',
-        createdById: 'demo-user-id',
-        type: 'shopping',
-        categoryId: 'cat3',
-        title: 'Хлеб цельнозерновой',
-        quantity: 1,
-        unit: 'шт',
-        status: 'completed',
-        completedAt: new Date(),
-        createdAt: new Date(Date.now() - 7200000),
-        updatedAt: new Date(),
-        category: { id: 'cat3', name: 'Бакалея', icon: 'Package', type: 'shopping', order: 3 },
-        assignedTo: [],
-      },
-      {
-        id: 't4',
-        familyId: 'demo-family-1',
-        createdById: 'demo-user-id',
-        type: 'home',
-        title: 'Помыть посуду',
-        description: 'После ужина',
-        status: 'active',
-        createdAt: new Date(Date.now() - 1800000),
-        updatedAt: new Date(),
-        assignedTo: [],
-      },
-      {
-        id: 't5',
-        familyId: 'demo-family-1',
-        createdById: 'demo-user-id',
-        type: 'shopping',
-        categoryId: 'cat4',
-        title: 'Яблоки Голден',
-        quantity: 1,
-        unit: 'кг',
-        status: 'archived',
-        completedAt: new Date(Date.now() - 86400000),
-        createdAt: new Date(Date.now() - 172800000),
-        updatedAt: new Date(),
-        category: { id: 'cat4', name: 'Овощи/Фрукты', icon: 'Apple', type: 'shopping', order: 4 },
-        assignedTo: [],
-      },
-    ];
-    
-    setTasks(demoTasks);
-    
-    // Demo events
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(18, 0, 0, 0);
-    
-    const nextWeek = new Date();
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    nextWeek.setHours(14, 0, 0, 0);
-    
-    const demoEvents: Event[] = [
-      {
-        id: 'e1',
-        createdById: 'demo-user-id',
-        title: 'Семейный ужин',
-        description: 'Встречаемся всей семьёй на ужин',
-        location: 'Ресторан "Домашний"',
-        eventDate: tomorrow,
-        createdAt: new Date(),
-        participants: [
-          { id: 'p1', eventId: 'e1', userId: 'demo-user-id', response: 'going', updatedAt: new Date() },
-          { id: 'p2', eventId: 'e1', userId: 'demo-user-2', response: 'pending', updatedAt: new Date() },
-        ],
-      },
-      {
-        id: 'e2',
-        createdById: 'demo-user-id',
-        title: 'День рождения мамы',
-        description: 'Празднуем день рождения!',
-        location: 'Дома',
-        eventDate: nextWeek,
-        createdAt: new Date(Date.now() - 86400000),
-        participants: [
-          { id: 'p3', eventId: 'e2', userId: 'demo-user-id', response: 'going', updatedAt: new Date() },
-          { id: 'p4', eventId: 'e2', userId: 'demo-user-2', response: 'going', updatedAt: new Date() },
-        ],
-      },
-    ];
-    
-    setEvents(demoEvents);
-    
-    // Demo wishlist
-    const demoWishlist: WishlistItem[] = [
-      {
-        id: 'w1',
-        userId: 'demo-user-id',
-        title: 'Беспроводные наушники',
-        description: 'Предпочтительно Sony или Bose',
-        link: 'https://example.com/headphones',
-        price: 15000,
-        isBooked: false,
-        createdAt: new Date(),
-        bookings: [],
-      },
-      {
-        id: 'w2',
-        userId: 'demo-user-id',
-        title: 'Книга по программированию',
-        description: 'Clean Code Роберта Мартина',
-        price: 1500,
-        isBooked: true,
-        createdAt: new Date(Date.now() - 86400000),
-        bookings: [{ id: 'b1', itemId: 'w2', userId: 'demo-user-2', bookedAt: new Date() }],
-      },
-      {
-        id: 'w3',
-        userId: 'demo-user-id',
-        title: 'Сертификат в магазин спорта',
-        price: 3000,
-        isBooked: false,
-        createdAt: new Date(Date.now() - 172800000),
-        bookings: [],
-      },
-    ];
-    
-    setWishlist(demoWishlist);
-    
-    // Demo friends
-    setFriends([
-      { id: 'demo-user-2', telegramId: '987654321', username: 'ivan_petrov', firstName: 'Иван', lastName: 'Петров', createdAt: new Date(), updatedAt: new Date() },
-      { id: 'demo-user-3', telegramId: '987654322', username: 'anna_smirnova', firstName: 'Анна', lastName: 'Смирнова', createdAt: new Date(), updatedAt: new Date() },
-    ]);
-  }, [setIsDemoMode, setUser, isTelegram, setFamilies, setCurrentFamily, setTasks, setEvents, setWishlist, setFriends]);
+  }, [setFamilies, setCurrentFamily, setTasks, setEvents, setWishlist, setFriends, setIsLoading]);
 
-  // Initialize app with demo data
+  // Initialize app
   useEffect(() => {
     if (!isReady || initialized) return;
     
     const initApp = async () => {
       setIsLoading(true);
       
-      // If in Telegram, authenticate user
+      // Check if running in Telegram
       if (isTelegram && telegramUser) {
         try {
+          // Authenticate with Telegram
           const response = await fetch('/api/auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -260,21 +117,51 @@ function AppContent() {
           if (response.ok) {
             const data = await response.json();
             setUser(data.user);
+            setIsDemoMode(false);
+            await loadDataFromDB(data.user.id);
           }
         } catch (error) {
           console.error('Auth error:', error);
         }
       }
       
-      // Load demo data
-      loadDemoData();
-      
       setIsLoading(false);
       setInitialized(true);
     };
     
     initApp();
-  }, [isReady, initialized, isTelegram, telegramUser, setIsLoading, setUser, loadDemoData]);
+  }, [isReady, initialized, isTelegram, telegramUser, setIsLoading, setUser, setIsDemoMode, loadDataFromDB]);
+
+  // Login with Telegram ID (for testing)
+  const handleLoginWithId = async () => {
+    if (!telegramIdInput.trim()) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telegramId: telegramIdInput.trim(),
+          username: `user_${telegramIdInput}`,
+          firstName: 'Test',
+          lastName: 'User',
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data.user);
+        setIsDemoMode(true);
+        await loadDataFromDB(data.user.id);
+        setShowLoginForm(false);
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Task handlers
   const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
@@ -379,6 +266,87 @@ function AppContent() {
     );
   }
 
+  // Not logged in - show login options
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md p-6 rounded-3xl shadow-lg">
+          <div className="text-center mb-6">
+            <div className="w-20 h-20 mx-auto mb-4 bg-primary/10 rounded-full flex items-center justify-center">
+              <svg className="w-10 h-10 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Семейный Органайзер</h1>
+            <p className="text-gray-500">
+              {isTelegram 
+                ? 'Загрузка данных...' 
+                : 'Войдите для управления задачами семьи'}
+            </p>
+          </div>
+
+          {isTelegram ? (
+            <div className="text-center text-sm text-gray-400">
+              Подождите...
+            </div>
+          ) : showLoginForm ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Введите ваш Telegram ID
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Например: 123456789"
+                  value={telegramIdInput}
+                  onChange={(e) => setTelegramIdInput(e.target.value)}
+                  className="rounded-xl"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Ваш Telegram ID можно узнать у @userinfobot в Telegram
+                </p>
+              </div>
+              <Button 
+                onClick={handleLoginWithId}
+                className="w-full rounded-xl h-12"
+              >
+                Войти
+              </Button>
+              <Button 
+                variant="ghost"
+                onClick={() => setShowLoginForm(false)}
+                className="w-full rounded-xl"
+              >
+                Назад
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="bg-blue-50 rounded-2xl p-4">
+                <h3 className="font-semibold text-blue-800 mb-2">📱 Через Telegram:</h3>
+                <ol className="text-sm text-blue-700 space-y-1">
+                  <li>1. Найдите бота в Telegram</li>
+                  <li>2. Откройте Mini App</li>
+                </ol>
+              </div>
+              
+              <div className="bg-gray-50 rounded-2xl p-4">
+                <h3 className="font-semibold text-gray-800 mb-2">🧪 Для тестирования:</h3>
+                <Button 
+                  variant="outline"
+                  onClick={() => setShowLoginForm(true)}
+                  className="w-full rounded-xl"
+                >
+                  Войти по Telegram ID
+                </Button>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header 
@@ -441,7 +409,7 @@ function AppContent() {
             </motion.div>
           )}
           
-          {activeTab === 'profile' && user && (
+          {activeTab === 'profile' && (
             <motion.div
               key="profile"
               initial={{ opacity: 0, y: 20 }}

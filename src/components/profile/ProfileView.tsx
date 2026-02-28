@@ -17,11 +17,10 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
 interface ProfileViewProps {
-  user: User;
+  user: User | null;
   families: FamilyGroup[];
   friendsCount: number;
   isOwner: boolean;
@@ -43,6 +42,16 @@ export function ProfileView({
   onAcceptFriend,
   onCreateFamily
 }: ProfileViewProps) {
+  if (!user) {
+    return (
+      <div className="px-4">
+        <Card className="p-6 rounded-3xl text-center">
+          <p className="text-gray-500">Загрузка профиля...</p>
+        </Card>
+      </div>
+    );
+  }
+
   const getInitials = (name: string) => {
     return name
       .split(' ')

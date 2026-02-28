@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// POST /api/auth - Authenticate or create user from Telegram data
+// POST /api/auth - Authenticate or create user
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { telegramId, username, firstName, lastName, photoUrl } = body;
 
-    if (!telegramId || !firstName) {
+    if (!telegramId) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'telegramId is required' },
         { status: 400 }
       );
     }
@@ -23,10 +23,10 @@ export async function POST(request: NextRequest) {
       user = await db.user.create({
         data: {
           telegramId: String(telegramId),
-          username,
-          firstName,
-          lastName,
-          avatarUrl: photoUrl,
+          username: username || null,
+          firstName: firstName || 'User',
+          lastName: lastName || null,
+          avatarUrl: photoUrl || null,
         },
       });
     } else {
@@ -34,10 +34,10 @@ export async function POST(request: NextRequest) {
       user = await db.user.update({
         where: { id: user.id },
         data: {
-          username,
-          firstName,
-          lastName,
-          avatarUrl: photoUrl,
+          username: username || user.username,
+          firstName: firstName || user.firstName,
+          lastName: lastName || user.lastName,
+          avatarUrl: photoUrl || user.avatarUrl,
         },
       });
     }
